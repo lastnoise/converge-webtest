@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+<title>converge</title>
+
+<style>
+html, body, #canvas {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    width: 100%;
+    height: 100%;
+}
+
+html.cursor-hidden,
+html.cursor-hidden *,
+body.cursor-hidden,
+body.cursor-hidden * {
+    cursor: none !important;
+}
+
+body {
+    color: white;
+    background-color: black;
+    overflow: hidden;
+    touch-action: none;
+    font-family: Arial, sans-serif;
+}
+
+#canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+#canvas:focus {
+    outline: none;
+}
+
+#entry-veil {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background-color: black;
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    cursor: default;
+    opacity: 1;
+    pointer-events: auto;
+    transition: none;
+}
+
+#entry-veil.runtime-ready {
+    cursor: pointer;
+    pointer-events: none;
+}
+
+#entry-veil.hidden {
+    display: none;
+    pointer-events: none;
+}
+
+#portrait-gate {
+    position: fixed;
+    inset: 0;
+    z-index: 1001;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.74);
+    color: rgba(242, 246, 255, 0.88);
+    font-size: clamp(16px, 4vw, 22px);
+    line-height: 1.35;
+    letter-spacing: 0.02em;
+    text-align: center;
+    pointer-events: none;
+}
+
+#portrait-gate.visible {
+    display: flex;
+}
+
+#status {
+    display: none;
+}
+</style>
+
+<link rel="icon" type="image/png" href="build/index.icon.png">
+<link rel="apple-touch-icon" href="build/index.apple-touch-icon.png">
+
+</head>
+
+<body>
+
+<div id="entry-veil"></div>
+<div id="portrait-gate">rotate to enter</div>
+
+<canvas id="canvas" tabindex="-1">
+Your browser does not support the canvas tag.
+</canvas>
+
+<div id="status"></div>
+
+<script src="build/index.js"></script>
+
+<script>
+const GODOT_CONFIG = {
+    args: [],
+    canvasResizePolicy: 2,
+    ensureCrossOriginIsolationHeaders: true,
+    executable: "build/index",
+    experimentalVK: false,
+    fileSizes: {
+        "build/index.pck": 768240,
+        "build/index.wasm": 52126319
+    },
+    focusCanvas: true,
+    gdextensionLibs: []
+};
+
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+
+    const canvas = document.getElementById("canvas");
+    const entryVeil = document.getElementById("entry-veil");
+    const portraitGate = document.getElementById("portrait-gate");
+
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    const veilImage = isMobile
+        ? "mobile_fov_distort.png"
+        : "desktop_fov_distort.png";
+
+    entryVeil.style.backgroundImage = `url('${veilImage}')`;
+
+    const visualReadySettleMs = 250;
+
+    let runtimeReady = false;
+    let visualReady = false;
+    let handoffRequested = false;
+    let veilHidden = false;
+    let visualReadyAt = 0;
+    let revealTimer = 0;
+
+    function isPortraitViewport() {
+        return window.innerHeight > window.innerWidth;
+    }
+
+    function updatePortraitGate() {
+
+        if (isMobile && isPortraitViewport() && !veilHidden) {
+            portraitGate.classList.add("visible");
+        } else {
+            portraitGate.classList.remove("visible");
+        }
+    }
+
+    function requestFullscreenAndLandscape() {
+
+        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+
+            try {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } catch (err) {
+                console.warn("fullscreen request failed", err);
+            }
+        }
+
+        if (isMobile && screen.orientation && screen.orientation.lock) {
+
+            screen.orientation.lock("landscape").catch(() => {});
+        }
+    }
+
+    function hideCursor() {
+        document.documentElement.classList.add("cursor-hidden");
+        document.body.classList.add("cursor-hidden");
+        canvas.style.cursor = "none";
+    }
+
+    function hideWebVeil() {
+
+        if (!runtimeReady || !visualReady || !handoffRequested || veilHidden) {
+            return;
+        }
+
+        if (isMobile && isPortraitViewport()) {
+            updatePortraitGate();
+            return;
+        }
+
+        const elapsed = performance.now() - visualReadyAt;
+        const remaining = visualReadySettleMs - elapsed;
+
+        if (remaining > 0) {
+
+            if (revealTimer === 0) {
+                revealTimer = window.setTimeout(() => {
+                    revealTimer = 0;
+                    hideWebVeil();
+                }, remaining);
+            }
+
+            return;
+        }
+
+        veilHidden = true;
+
+        hideCursor();
+
+        portraitGate.classList.remove("visible");
+        entryVeil.classList.add("hidden");
+
+        if (entryVeil.parentNode) {
+            entryVeil.remove();
+        }
+
+        if (portraitGate.parentNode) {
+            portraitGate.remove();
+        }
+
+        canvas.focus({ preventScroll: true });
+    }
+
+    window.convergeRuntimeVisualReady = function () {
+
+        visualReady = true;
+        visualReadyAt = performance.now();
+        hideWebVeil();
+    };
+
+    function beginRuntimeHandoff(event) {
+
+        handoffRequested = true;
+
+        if (event) {
+            requestFullscreenAndLandscape();
+        }
+
+        updatePortraitGate();
+        hideWebVeil();
+    }
+
+    engine.startGame().then(() => {
+
+        runtimeReady = true;
+
+        entryVeil.classList.add("runtime-ready");
+
+        canvas.focus({ preventScroll: true });
+
+        updatePortraitGate();
+        hideWebVeil();
+
+    }).catch((err) => {
+
+        console.error(err);
+    });
+
+    document.addEventListener(
+        "pointerdown",
+        beginRuntimeHandoff,
+        { capture: true }
+    );
+
+    document.addEventListener(
+        "touchstart",
+        beginRuntimeHandoff,
+        { capture: true, passive: true }
+    );
+
+    window.addEventListener("resize", () => {
+
+        updatePortraitGate();
+    });
+
+    window.addEventListener("orientationchange", () => {
+
+        window.setTimeout(() => {
+
+            updatePortraitGate();
+            hideWebVeil();
+
+        }, 120);
+    });
+
+    updatePortraitGate();
+
+})();
+</script>
+
+</body>
+</html>
