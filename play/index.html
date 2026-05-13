@@ -131,6 +131,7 @@ const engine = new Engine(GODOT_CONFIG);
     const portraitGate = document.getElementById("portrait-gate");
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isDesktopFirefox = !isMobile && /Firefox\//i.test(navigator.userAgent);
 
     const veilImage = isMobile
         ? "mobile_fov_distort.png"
@@ -139,6 +140,7 @@ const engine = new Engine(GODOT_CONFIG);
     entryVeil.style.backgroundImage = `url('${veilImage}')`;
 
     const visualReadySettleMs = 250;
+    const firefoxFullscreenSettleMs = 250;
 
     let runtimeReady = false;
     let visualReady = false;
@@ -146,6 +148,12 @@ const engine = new Engine(GODOT_CONFIG);
     let veilHidden = false;
     let visualReadyAt = 0;
     let revealTimer = 0;
+
+    let desiredFullscreen = false;
+    let desiredPointerLock = false;
+    let desiredLandscape = false;
+
+    let firefoxFullscreenSettleTimer = 0;
 
     function isPortraitViewport() {
         return window.innerHeight > window.innerWidth;
@@ -160,27 +168,113 @@ const engine = new Engine(GODOT_CONFIG);
         }
     }
 
-    function requestFullscreenAndLandscape() {
+    function getFullscreenTarget() {
+        if (isDesktopFirefox) {
+            return canvas;
+        }
 
-        if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+        return document.documentElement;
+    }
 
-            try {
-                document.documentElement.requestFullscreen().catch(() => {});
-            } catch (err) {
-                console.warn("fullscreen request failed", err);
+    function hasFullscreenApi() {
+        const target = getFullscreenTarget();
+        return !!(target && target.requestFullscreen);
+    }
+
+    function hasPointerLockApi() {
+        return !!canvas.requestPointerLock;
+    }
+
+    function isPointerLocked() {
+        return document.pointerLockElement === canvas;
+    }
+
+    function isFullscreenActive() {
+        return !!document.fullscreenElement;
+    }
+
+    function requestFullscreenIfPossible() {
+
+        if (!desiredFullscreen || !hasFullscreenApi() || isFullscreenActive()) {
+            return;
+        }
+
+        try {
+
+            const target = getFullscreenTarget();
+            const result = target.requestFullscreen();
+
+            if (result && result.catch) {
+                result.catch(() => {});
             }
+
+        } catch (err) {
+            console.warn("fullscreen request failed", err);
+        }
+    }
+
+    function requestLandscapeIfPossible() {
+
+        if (!desiredLandscape || !isMobile || !screen.orientation || !screen.orientation.lock) {
+            return;
         }
 
-        if (isMobile && screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock("landscape").catch(() => {});
+    }
 
-            screen.orientation.lock("landscape").catch(() => {});
+    function requestPointerLockIfPossible() {
+
+        if (!desiredPointerLock || isMobile || !hasPointerLockApi() || isPointerLocked()) {
+            return;
         }
+
+        try {
+
+            const result = canvas.requestPointerLock();
+
+            if (result && result.catch) {
+                result.catch(() => {});
+            }
+
+        } catch (err) {
+            console.warn("pointer lock request failed", err);
+        }
+    }
+
+    function requestDesiredCapabilities() {
+        requestFullscreenIfPossible();
+        requestLandscapeIfPossible();
+        requestPointerLockIfPossible();
     }
 
     function hideCursor() {
         document.documentElement.classList.add("cursor-hidden");
         document.body.classList.add("cursor-hidden");
         canvas.style.cursor = "none";
+    }
+
+    function showCursor() {
+        document.documentElement.classList.remove("cursor-hidden");
+        document.body.classList.remove("cursor-hidden");
+        canvas.style.cursor = "default";
+    }
+
+    function clearRevealTimer() {
+
+        if (revealTimer !== 0) {
+            window.clearTimeout(revealTimer);
+            revealTimer = 0;
+        }
+    }
+
+    function scheduleRevealRetry(delayMs) {
+
+        if (revealTimer === 0) {
+            revealTimer = window.setTimeout(() => {
+                revealTimer = 0;
+                hideWebVeil();
+            }, delayMs);
+        }
     }
 
     function hideWebVeil() {
@@ -194,23 +288,25 @@ const engine = new Engine(GODOT_CONFIG);
             return;
         }
 
+        if (isDesktopFirefox && desiredFullscreen && !isFullscreenActive()) {
+            return;
+        }
+
+        if (isDesktopFirefox && desiredPointerLock && !isPointerLocked()) {
+            return;
+        }
+
         const elapsed = performance.now() - visualReadyAt;
         const remaining = visualReadySettleMs - elapsed;
 
         if (remaining > 0) {
-
-            if (revealTimer === 0) {
-                revealTimer = window.setTimeout(() => {
-                    revealTimer = 0;
-                    hideWebVeil();
-                }, remaining);
-            }
-
+            scheduleRevealRetry(remaining);
             return;
         }
 
         veilHidden = true;
 
+        clearRevealTimer();
         hideCursor();
 
         portraitGate.classList.remove("visible");
@@ -225,6 +321,7 @@ const engine = new Engine(GODOT_CONFIG);
         }
 
         canvas.focus({ preventScroll: true });
+        requestPointerLockIfPossible();
     }
 
     window.convergeRuntimeVisualReady = function () {
@@ -237,9 +334,16 @@ const engine = new Engine(GODOT_CONFIG);
     function beginRuntimeHandoff(event) {
 
         handoffRequested = true;
+        desiredFullscreen = true;
+        desiredLandscape = true;
+        desiredPointerLock = true;
+
+        if (event && event.cancelable && (event.type === "touchstart" || event.type === "keydown")) {
+            event.preventDefault();
+        }
 
         if (event) {
-            requestFullscreenAndLandscape();
+            requestDesiredCapabilities();
         }
 
         updatePortraitGate();
@@ -271,12 +375,80 @@ const engine = new Engine(GODOT_CONFIG);
     document.addEventListener(
         "touchstart",
         beginRuntimeHandoff,
-        { capture: true, passive: true }
+        { capture: true, passive: false }
     );
+
+    document.addEventListener("keydown", (event) => {
+
+        if (!handoffRequested && (
+            event.code === "Enter" ||
+            event.code === "Space" ||
+            event.code === "NumpadEnter"
+        )) {
+            beginRuntimeHandoff(event);
+            return;
+        }
+
+        if (handoffRequested) {
+            requestDesiredCapabilities();
+        }
+    });
+
+    document.addEventListener("fullscreenchange", () => {
+
+        if (document.fullscreenElement) {
+            hideCursor();
+
+            if (isDesktopFirefox) {
+                if (firefoxFullscreenSettleTimer !== 0) {
+                    window.clearTimeout(firefoxFullscreenSettleTimer);
+                    firefoxFullscreenSettleTimer = 0;
+                }
+
+                firefoxFullscreenSettleTimer = window.setTimeout(() => {
+                    firefoxFullscreenSettleTimer = 0;
+                    canvas.focus({ preventScroll: true });
+                    requestPointerLockIfPossible();
+                    hideWebVeil();
+                }, firefoxFullscreenSettleMs);
+
+                return;
+            }
+
+            requestPointerLockIfPossible();
+        } else {
+            if (veilHidden && !desiredPointerLock) {
+                showCursor();
+            }
+        }
+    });
+
+    document.addEventListener("pointerlockchange", () => {
+
+        if (isPointerLocked()) {
+            hideCursor();
+            hideWebVeil();
+        } else if (desiredPointerLock && document.visibilityState === "visible") {
+            hideCursor();
+        }
+    });
+
+    document.addEventListener("pointerlockerror", () => {
+        hideCursor();
+    });
+
+    document.addEventListener("visibilitychange", () => {
+
+        if (document.visibilityState === "visible" && handoffRequested) {
+            hideCursor();
+            requestDesiredCapabilities();
+        }
+    });
 
     window.addEventListener("resize", () => {
 
         updatePortraitGate();
+        hideWebVeil();
     });
 
     window.addEventListener("orientationchange", () => {
@@ -284,6 +456,7 @@ const engine = new Engine(GODOT_CONFIG);
         window.setTimeout(() => {
 
             updatePortraitGate();
+            requestLandscapeIfPossible();
             hideWebVeil();
 
         }, 120);
