@@ -465,6 +465,43 @@ body {
 
 
 
+
+/* mobile execution patch: preserve site, tune gesture weight, author native-build state */
+.mobile_build_state {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(7, 11, 27, 0.58);
+  color: rgba(var(--text-rgb), 0.82);
+  font-family: var(--mono);
+  font-size: var(--system-size);
+  line-height: 1.35;
+  letter-spacing: 0.055em;
+  text-align: center;
+  cursor: pointer;
+}
+
+.mobile_build_state.visible {
+  display: flex;
+}
+
+body.mobile-build-active .scroller {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  .scroller {
+    touch-action: none;
+    overscroll-behavior: none;
+    scroll-snap-type: y mandatory;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -537,6 +574,7 @@ body {
 
 </div>
 
+<div class="mobile_build_state" id="mobile-build-state" aria-hidden="true">android/ios tuned builds coming soon</div>
 
 <script>
 (function () {
@@ -545,6 +583,9 @@ body {
   const scroller = document.getElementById('scroller');
   const whisper = document.querySelector('.instrument_whisper');
   const bottomEntry = document.querySelector('.bottom_entry');
+  const entryLink = document.querySelector('.entry_link');
+  const mobileBuildState = document.getElementById('mobile-build-state');
+  const isMobilePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   let whisperTimer = null;
 
   const clearWhisperTimer = () => {
@@ -574,8 +615,50 @@ body {
     if (instrumentsPanel) observer.observe(instrumentsPanel);
   }
 
+  function showMobileBuildState() {
+    if (!mobileBuildState) {
+      return;
+    }
+
+    document.body.classList.add('mobile-build-active');
+    mobileBuildState.classList.add('visible');
+    mobileBuildState.setAttribute('aria-hidden', 'false');
+  }
+
+  function hideMobileBuildState() {
+    if (!mobileBuildState) {
+      return;
+    }
+
+    document.body.classList.remove('mobile-build-active');
+    mobileBuildState.classList.remove('visible');
+    mobileBuildState.setAttribute('aria-hidden', 'true');
+  }
+
+  if (mobileBuildState) {
+    mobileBuildState.addEventListener('click', hideMobileBuildState);
+  }
+
+  function handlePlayIntent(event) {
+    if (!isMobilePointer) {
+      return;
+    }
+
+    event.preventDefault();
+    showMobileBuildState();
+  }
+
+  if (entryLink) {
+    entryLink.addEventListener('click', handlePlayIntent);
+  }
+
   if (bottomEntry) {
-    bottomEntry.addEventListener('click', () => {
+    bottomEntry.addEventListener('click', (event) => {
+      if (isMobilePointer) {
+        handlePlayIntent(event);
+        return;
+      }
+
       window.location.href = '/play/index.html';
     });
   }
@@ -802,24 +885,36 @@ body {
       return;
     }
 
-    const currentY = event.touches[0].clientY;
-    const delta = touchStartY - currentY;
+    event.preventDefault();
+  }, { passive: false });
 
-    if (locked || Math.abs(delta) >= touchThreshold) {
-      event.preventDefault();
+  scroller.addEventListener('touchend', (event) => {
+    if (touchStartY == null || touchConsumed) {
+      touchStartY = null;
+      touchConsumed = false;
+      return;
     }
 
-    if (locked || touchConsumed || Math.abs(delta) < touchThreshold) {
+    const touch = event.changedTouches && event.changedTouches.length === 1
+      ? event.changedTouches[0]
+      : null;
+
+    if (!touch) {
+      touchStartY = null;
+      touchConsumed = false;
+      return;
+    }
+
+    const delta = touchStartY - touch.clientY;
+    touchStartY = null;
+    touchConsumed = false;
+
+    if (locked || Math.abs(delta) < touchThreshold) {
       return;
     }
 
     touchConsumed = true;
     requestStep(delta > 0 ? 1 : -1);
-  }, { passive: false });
-
-  scroller.addEventListener('touchend', () => {
-    touchStartY = null;
-    touchConsumed = false;
   }, { passive: true });
 
   scroller.addEventListener('scroll', () => {

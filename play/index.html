@@ -84,6 +84,28 @@ body {
     display: flex;
 }
 
+#mobile-build-gate {
+    position: fixed;
+    inset: 0;
+    z-index: 1002;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.78);
+    color: rgba(242, 246, 255, 0.88);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: clamp(16px, 4vw, 22px);
+    line-height: 1.35;
+    letter-spacing: 0.02em;
+    text-align: center;
+    pointer-events: none;
+}
+
+#mobile-build-gate.visible {
+    display: flex;
+}
+
 #status {
     display: none;
 }
@@ -98,6 +120,7 @@ body {
 
 <div id="entry-veil"></div>
 <div id="portrait-gate">rotate to enter</div>
+<div id="mobile-build-gate">android/ios tuned build</div>
 
 <canvas id="canvas" tabindex="-1">
 Your browser does not support the canvas tag.
@@ -129,6 +152,7 @@ const engine = new Engine(GODOT_CONFIG);
     const canvas = document.getElementById("canvas");
     const entryVeil = document.getElementById("entry-veil");
     const portraitGate = document.getElementById("portrait-gate");
+    const mobileBuildGate = document.getElementById("mobile-build-gate");
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     const isDesktopFirefox = !isMobile && /Firefox\//i.test(navigator.userAgent);
@@ -138,6 +162,18 @@ const engine = new Engine(GODOT_CONFIG);
         : "desktop_fov_distort.png";
 
     entryVeil.style.backgroundImage = `url('${veilImage}')`;
+
+    if (isMobile) {
+        if (mobileBuildGate) {
+            mobileBuildGate.classList.add("visible");
+        }
+
+        if (portraitGate && portraitGate.parentNode) {
+            portraitGate.remove();
+        }
+
+        return;
+    }
 
     const visualReadySettleMs = 250;
     const firefoxFullscreenSettleMs = 250;
