@@ -440,6 +440,22 @@ body {
   -webkit-mask-composite: source-in, source-in;
   mask-composite: intersect;
 }
+
+.instrument_whisper {
+  opacity: 0;
+  transition: opacity 3s linear;
+  pointer-events: none;
+}
+
+.instrument_whisper.visible {
+  opacity: .72;
+}
+
+.bottom_entry {
+  cursor: pointer;
+}
+
+
 /* OPTION C (slight): perspective sabotage */
 
 
@@ -504,6 +520,7 @@ body {
 <div class="kicker l15" style="--line_alpha: 0.764; --darkreader-text--line_alpha: 0.764;">instruments</div>
 <div class="line l16" style="--line_alpha: 0.752; --darkreader-text--line_alpha: 0.752;">precision restraint</div>
 <div class="line l17" style="--line_alpha: 0.740; --darkreader-text--line_alpha: 0.740;">commitment consequence</div>
+<div class="line instrument_whisper" style="--line_alpha: 0.728; --darkreader-text--line_alpha: 0.728;">vortex / ledger</div>
 </div>
 </section>
 <!-- 7 -->
@@ -516,10 +533,54 @@ body {
 </section>
 
 <!-- 8: empty close -->
-<section class="panel"></section>
+<section class="panel bottom_entry" aria-label="enter converge"></section>
 
 </div>
 
+
+<script>
+(function () {
+  'use strict';
+
+  const scroller = document.getElementById('scroller');
+  const whisper = document.querySelector('.instrument_whisper');
+  const bottomEntry = document.querySelector('.bottom_entry');
+  let whisperTimer = null;
+
+  const clearWhisperTimer = () => {
+    if (whisperTimer !== null) {
+      window.clearTimeout(whisperTimer);
+      whisperTimer = null;
+    }
+  };
+
+  if (whisper && scroller && 'IntersectionObserver' in window) {
+    const instrumentsPanel = whisper.closest('.panel');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        clearWhisperTimer();
+
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.9) {
+          whisperTimer = window.setTimeout(() => {
+            whisper.classList.add('visible');
+            whisperTimer = null;
+          }, 10000);
+        } else {
+          whisper.classList.remove('visible');
+        }
+      });
+    }, { root: scroller, threshold: [0, 0.9, 1] });
+
+    if (instrumentsPanel) observer.observe(instrumentsPanel);
+  }
+
+  if (bottomEntry) {
+    bottomEntry.addEventListener('click', () => {
+      window.location.href = '/play/index.html';
+    });
+  }
+})();
+</script>
 <script>
 /*
   Authored traversal controller.
