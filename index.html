@@ -573,7 +573,7 @@ body.mobile-build-active .scroller {
 
 </div>
 
-<div class="mobile_build_state" id="mobile-build-state" aria-hidden="true">android tuned build coming soon</div>
+<div class="mobile_build_state" id="mobile-build-state" aria-hidden="true">mobile tuned build coming soon</div>
 
 <script>
 (function () {
@@ -619,6 +619,9 @@ body.mobile-build-active .scroller {
       return;
     }
 
+    mobileBuildState.textContent = isMobilePointer
+      ? 'mobile tuned build coming soon'
+      : 'web tuned build coming soon';
     document.body.classList.add('mobile-build-active');
     mobileBuildState.classList.add('visible');
     mobileBuildState.setAttribute('aria-hidden', 'false');
@@ -639,10 +642,6 @@ body.mobile-build-active .scroller {
   }
 
   function handlePlayIntent(event) {
-    if (!isMobilePointer) {
-      return;
-    }
-
     event.preventDefault();
     showMobileBuildState();
   }
@@ -652,14 +651,7 @@ body.mobile-build-active .scroller {
   }
 
   if (bottomEntry) {
-    bottomEntry.addEventListener('click', (event) => {
-      if (isMobilePointer) {
-        handlePlayIntent(event);
-        return;
-      }
-
-      window.location.href = '/play/index.html';
-    });
+    bottomEntry.addEventListener('click', handlePlayIntent);
   }
 })();
 </script>
